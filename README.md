@@ -1,0 +1,84 @@
+# PeopleClock
+
+A small, responsive HRMS assignment demo with separate employee and manager workspaces, real account registration, attendance records stored in MongoDB, location captured only at clock events, and a Python RAG policy assistant.
+
+> **Full-stack app:** `client/` is the React UI, `server/` is the Express/Node API, MongoDB stores accounts and attendance, and `python-rag/` is the FastAPI policy service. `PeopleClock-preview.html` is only an offline visual preview of the UI. To use registration, clock events, manager data, or RAG, run all three services and configure MongoDB using the steps below.
+
+Opening `PeopleClock-preview.html` directly uses a `file://` origin. Browsers isolate file pages and do not route `/api/...` requests to the Node server, so sign-in from that preview cannot work. The app now identifies this case in the UI. For working sign-in and live records, launch the services below and open the HTTP address `http://localhost:5173`.
+
+## What works
+
+- Employee and manager accounts have separate role-based interfaces after sign-in.
+- Forgot password opens a form for the registered email, new password, and confirmation. The API checks the match, hashes the password with bcrypt, and saves the hash to MongoDB. This demo flow does not verify email ownership; use mock accounts only.
+- Employees register with their name, email, title, department, and password; manager registration also requires a private registration code.
+- Employees clock in and out. The browser asks permission for coordinates at each event and stores those coordinates with its timestamp. If location permission or connectivity is unavailable, the time event can still be recorded without coordinates.
+- Managers see the registered employee directory, employees who are currently clocked in, event history, and links to the event coordinates on OpenStreetMap. OpenStreetMap is just the map view; no Google Maps API is used.
+- The employee attendance history is tied to the signed-in employee. Attendance and accounts are MongoDB records, not sample dashboard arrays.
+- The Python FastAPI service retrieves relevant passages from the mock company policy Markdown files using TF-IDF, then sends those passages and the question to Gemini for a concise grounded answer. The Gemini API key is held only by the Python service.
+
+Only company handbook content in `python-rag/company_docs/` is mock data. New employees and attendance events come from normal sign-up and clock actions.
+
+## Run locally
+
+Requirements: Node.js 20+ and Python 3.10+. Create a free MongoDB Atlas cluster (or use a local MongoDB server), create a database user, and allow your development IP in Atlas network access. For the Render demo, Render's outbound IPs can change; Atlas may need a `0.0.0.0/0` network rule for the hosted API to reach it. Use that only for a fake-data demo with a strong database password, never for real HR data.
+
+1. Copy `.env.example` to `.env` and fill in `MONGODB_URI`, a long random `JWT_SECRET`, and a private `MANAGER_SIGNUP_CODE`. Copy `python-rag/.env.example` to `python-rag/.env` and set `GEMINI_API_KEY` from Google AI Studio. Keep both `.env` files private.
+2. Install Node dependencies:
+
+   ```bash
+   npm install
+   ```
+
+3. Start the API, browser app, and Python service in three terminals:
+
+   ```bash
+   npm run dev:server
+   ```
+
+   ```bash
+   npm run dev:client
+   ```
+
+   ```bash
+   cd python-rag
+   python -m venv .venv
+   # Activate the environment, then install and run:
+   pip install -r requirements.txt
+   uvicorn main:app --reload --port 8000
+   ```
+
+4. Open `http://localhost:5173`. Register a manager using your configured manager code, then register one or more employees. Use the Manager/Employee selector on the registration and sign-in screens. Sign-in redirects each account to its own interface.
+
+## Deploy free for a demo
+
+The included `render.yaml` deploys one Render web service for the built React app plus Express API and a second service for FastAPI. In Render, create the Blueprint from this repository and provide:
+
+- `MONGODB_URI`: connection string for a free MongoDB Atlas cluster.
+- `MANAGER_SIGNUP_CODE`: a private code you choose and share only with the demo manager.
+- `GEMINI_API_KEY`: create a secret environment variable for the `peopleclock-rag` service using a key from Google AI Studio. Do not add it to the React client or the Node service.
+
+Render creates `JWT_SECRET` and wires the API to the Python service. After deployment, register your manager and employee accounts through the app. HTTPS is provided by Render, which is needed for browser geolocation outside localhost.
+
+Free Render services can sleep when idle, so the first request after a quiet period can take a while. Free hosting is suitable for showing the assignment, not for real HR records: use fake names and locations in the public demo. Hosting limits and free-plan eligibility are controlled by the hosting provider and can change.
+
+## Configuration
+
+| Variable | Service | Required | Purpose |
+| --- | --- | --- | --- |
+| `MONGODB_URI` | Node API | Yes | MongoDB connection URI |
+| `JWT_SECRET` | Node API | Yes in deployment | Signs login tokens |
+| `MANAGER_SIGNUP_CODE` | Node API | Yes | Prevents open manager self-registration |
+| `CLIENT_ORIGIN` | Node API | No | Restricts browser origin when API is deployed separately |
+| `RAG_API_URL` | Node API | No locally / set in deployment | Base URL for FastAPI; `/ask` is appended |
+| `GEMINI_API_KEY` | Python RAG | Yes | Secret API key used by FastAPI for Gemini requests |
+| `GEMINI_MODEL` | Python RAG | No | Gemini model ID (default `gemini-3.1-flash-lite`) |
+
+## Stack and request flow
+
+```text
+React + Vite browser → Express API → MongoDB
+                            │
+                            └────→ FastAPI RAG → TF-IDF handbook retrieval → Gemini API
+```
+
+The browser sends a clock event to Express. Express validates the signed-in account, records server time and the optional coordinates, and returns the saved record. Manager-only API routes are role-checked on the server. The browser never connects directly to MongoDB or Ollama.
