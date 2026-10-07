@@ -97,7 +97,7 @@ app.get('/api/assistant/health', auth, async (_req, res) => {
   try {
     const response = await fetch(`${base.replace(/\/$/, '')}/health`, { signal: AbortSignal.timeout(8000) });
     const data = await response.json();
-    res.json({ ready: response.ok && data.ok === true && data.geminiConfigured === true, model: data.llm, message: data.geminiConfigured ? 'Gemini is ready.' : 'Add GEMINI_API_KEY to the Python RAG service settings.' });
+    res.json({ ready: response.ok && data.ok === true && data.geminiConfigured === true, model: data.llm, message: data.geminiConfigured ? 'Gemini is ready.' : 'Add GEMINI_API_KEY to the peopleclock Render service settings.' });
   } catch {
     res.json({ ready: false, message: 'Python policy service is unreachable. Check its deployment and RAG_API_URL.' });
   }
@@ -111,7 +111,7 @@ app.post('/api/assistant/ask', auth, async (req, res) => {
     res.status(response.status).json(data);
   } catch (err) {
     const timedOut = err.name === 'TimeoutError';
-    res.status(timedOut ? 504 : 502).json({ error: timedOut ? 'The policy assistant took too long to respond. Try again shortly.' : 'PeopleClock cannot reach the Python policy service. Check that it is running locally or that RAG_API_URL points to the deployed peopleclock-rag service.' });
+    res.status(timedOut ? 504 : 502).json({ error: timedOut ? 'The policy assistant took too long to respond. Try again shortly.' : 'PeopleClock cannot reach its Python policy service. Check the combined service logs and RAG_API_URL.' });
   }
 });
 

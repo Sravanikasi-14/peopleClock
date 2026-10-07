@@ -62,7 +62,7 @@ async def ask(payload: Question):
 
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        raise HTTPException(status_code=503, detail="Gemini is not configured. Add GEMINI_API_KEY to the Python RAG service environment.")
+        raise HTTPException(status_code=503, detail="Gemini is not configured. Add GEMINI_API_KEY to the peopleclock Render service environment.")
 
     context = "\n\n".join(f"[{d['source']} · section {d['chunk']}]\n{d['text']}" for d in selected)
     model = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
@@ -84,11 +84,11 @@ async def ask(payload: Question):
                 },
             )
         if response.status_code == 403:
-            raise HTTPException(status_code=502, detail="Gemini rejected the API key. Check GEMINI_API_KEY in the Python RAG service settings.")
+            raise HTTPException(status_code=502, detail="Gemini rejected the API key. Check GEMINI_API_KEY in the peopleclock Render service settings.")
         if response.status_code == 429:
             raise HTTPException(status_code=503, detail="Gemini's request limit was reached. Wait a little and try again.")
         if response.status_code in (400, 404):
-            raise HTTPException(status_code=502, detail="Gemini could not use the configured model. Check GEMINI_MODEL in the Python RAG service settings.")
+            raise HTTPException(status_code=502, detail="Gemini could not use the configured model. Check GEMINI_MODEL in the peopleclock Render service settings.")
         response.raise_for_status()
         result = response.json()
         answer = "".join(
