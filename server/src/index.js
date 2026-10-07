@@ -18,10 +18,18 @@ const JWT_SECRET = process.env.JWT_SECRET || 'local-development-secret-change-me
 
 const safeUser = (u) => ({ id: String(u._id), name: u.name, email: u.email, role: u.role, title: u.title, department: u.department });
 const normalizeDepartment = (value) => String(value || 'General').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-US');
-function auth(req, res, next) {
+async function auth(req, res, next) {
   const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
-  try { if (!token) throw new Error(); req.user = jwt.verify(token, JWT_SECRET); next(); }
-  catch { res.status(401).json({ error: 'Please sign in to continue.' }); }
+  if (!token) return res.status(401).json({ error: 'Please sign in to continue.' });
+  let payload;
+  try { payload = jwt.verify(token, JWT_SECRET); }
+  catch { return res.status(401).json({ error: 'Your session has expired. Please sign in again.' }); }
+  try {
+    const user = await User.findById(payload.sub).select('_id role').lean();
+    if (!user || user.role !== payload.role) return res.status(401).json({ error: 'This account is no longer available. Please sign in with an active account.' });
+    req.user = payload;
+    next();
+  } catch (error) { next(error); }
 }
 const managerOnly = (req, res, next) => req.user.role === 'manager' ? next() : res.status(403).json({ error: 'Manager access required.' });
 function compactTrail(points = [], limit = 400) {

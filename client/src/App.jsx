@@ -18,7 +18,9 @@ async function api(path, { token, ...options } = {}) {
     const message = data.error || data.detail || (response.status >= 500
       ? 'The PeopleClock API is unavailable. Start the Node server and check its MongoDB connection.'
       : `The request could not be completed (HTTP ${response.status}).`);
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   }
   return data;
 }
@@ -42,11 +44,25 @@ const colors = ['lavender', 'mint', 'peach', 'blue', 'rose'];
 
 function App() {
   const [session, setSession] = useState(() => { try { return JSON.parse(localStorage.getItem('peopleclock-session')); } catch { return null; } });
+  const [sessionChecked, setSessionChecked] = useState(() => !localStorage.getItem('peopleclock-session'));
   const [page, setPage] = useState('overview');
   const [menuOpen, setMenuOpen] = useState(false);
   const [toast, setToast] = useState('');
   useEffect(() => { if (session) localStorage.setItem('peopleclock-session', JSON.stringify(session)); else localStorage.removeItem('peopleclock-session'); }, [session]);
+  useEffect(() => {
+    let active = true;
+    if (!session?.token) { setSessionChecked(true); return () => { active = false; }; }
+    setSessionChecked(false);
+    api('/me', { token: session.token }).then(({ user }) => {
+      if (active) setSession(current => current?.token === session.token ? { ...current, user } : current);
+    }).catch(error => {
+      if (active && [401, 404].includes(error.status)) setSession(null);
+      else if (active) notify(error.message);
+    }).finally(() => { if (active) setSessionChecked(true); });
+    return () => { active = false; };
+  }, [session?.token]);
   const notify = useCallback((message) => { setToast(message); window.setTimeout(() => setToast(''), 3500); }, []);
+  if (!sessionChecked) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center',color:'#52645b'}}><LoaderCircle className="spin" size={22}/> Verifying your account…</div>;
   if (!session) return <Auth onSuccess={setSession} />;
   const logout = () => { setSession(null); setPage('overview'); };
   return <div className="app-shell">
