@@ -23,7 +23,7 @@ function auth(req, res, next) {
   catch { res.status(401).json({ error: 'Please sign in to continue.' }); }
 }
 const managerOnly = (req, res, next) => req.user.role === 'manager' ? next() : res.status(403).json({ error: 'Manager access required.' });
-const publicAttendance = (a) => ({ id: String(a._id), employee: a.employee?._id ? safeUser(a.employee) : a.employee, clockIn: a.clockIn, clockOut: a.clockOut, clockInLocation: a.clockInLocation, clockOutLocation: a.clockOutLocation });
+const publicAttendance = (a, includeLiveLocation = false) => ({ id: String(a._id), employee: a.employee?._id ? safeUser(a.employee) : a.employee, clockIn: a.clockIn, clockOut: a.clockOut, clockInLocation: a.clockInLocation, clockOutLocation: a.clockOutLocation, ...(includeLiveLocation ? { currentLocation: a.currentLocation, locationTrail: (a.locationTrail || []).slice(-80), trailPointCount: (a.locationTrail || []).length } : {}) });
 function validLocation(location) {
   if (location == null) return null;
   const { latitude, longitude, accuracy } = location;
@@ -71,7 +71,9 @@ app.post('/api/attendance/clock-in', auth, async (req, res) => {
   try {
     const current = await Attendance.findOne({ employee: req.user.sub, clockOut: null });
     if (current) return res.status(409).json({ error: 'You are already clocked in.' });
-    const record = await Attendance.create({ employee: req.user.sub, clockIn: new Date(), clockInLocation: validLocation(req.body?.location) });
+    const clockIn = new Date();
+    const location = validLocation(req.body?.location);
+    const record = await Attendance.create({ employee: req.user.sub, clockIn, clockInLocation: location, currentLocation: location ? { ...location, updatedAt: clockIn } : undefined, locationTrail: location ? [{ ...location, recordedAt: clockIn }] : [] });
     res.status(201).json({ record: publicAttendance(record) });
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
@@ -79,8 +81,47 @@ app.post('/api/attendance/clock-out', auth, async (req, res) => {
   try {
     const record = await Attendance.findOne({ employee: req.user.sub, clockOut: null }).sort({ clockIn: -1 });
     if (!record) return res.status(409).json({ error: 'You are not clocked in.' });
-    record.clockOut = new Date(); record.clockOutLocation = validLocation(req.body?.location); await record.save();
+    record.clockOut = new Date(); record.clockOutLocation = validLocation(req.body?.location);
+    if (record.clockOutLocation) {
+      record.currentLocation = { ...record.clockOutLocation, updatedAt: record.clockOut };
+      record.locationTrail.push({ ...record.clockOutLocation, recordedAt: record.clockOut });
+      if (record.locationTrail.length > 2000) record.locationTrail.splice(0, record.locationTrail.length - 2000);
+    }
+    await record.save();
     res.json({ record: publicAttendance(record) });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+app.put('/api/attendance/location', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'employee') return res.status(403).json({ error: 'Only employees can share shift location.' });
+    const location = validLocation(req.body?.location);
+    if (!location) return res.status(400).json({ error: 'Location coordinates are required.' });
+    const record = await Attendance.findOne({ employee: req.user.sub, clockOut: null }).sort({ clockIn: -1 });
+    if (!record) return res.status(409).json({ error: 'You are not currently clocked in.' });
+    const now = new Date();
+    record.locationTrail ||= [];
+    if (!record.locationTrail.length && Number.isFinite(record.clockInLocation?.latitude) && Number.isFinite(record.clockInLocation?.longitude)) {
+      record.locationTrail.push({ ...record.clockInLocation, recordedAt: record.clockIn });
+    }
+    const previous = record.locationTrail.at(-1);
+    const toRadians = (degrees) => degrees * Math.PI / 180;
+    let movedMeters = Infinity;
+    if (previous) {
+      const dLat = toRadians(location.latitude - previous.latitude);
+      const dLon = toRadians(location.longitude - previous.longitude);
+      const lat1 = toRadians(previous.latitude);
+      const lat2 = toRadians(location.latitude);
+      const haversine = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+      movedMeters = 6371000 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+    }
+    record.currentLocation = { ...location, updatedAt: now };
+    // Keep a compact breadcrumb trail: record a point after 15m of movement or every 30 seconds.
+    if (!previous || movedMeters >= 15 || now - new Date(previous.recordedAt).getTime() >= 30000) {
+      record.locationTrail.push({ ...location, recordedAt: now });
+      if (record.locationTrail.length > 2000) record.locationTrail.splice(0, record.locationTrail.length - 2000);
+    }
+    await record.save();
+    res.json({ currentLocation: record.currentLocation, trailPoints: record.locationTrail.length });
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 app.get('/api/manager/overview', auth, managerOnly, async (req, res) => {
@@ -89,7 +130,7 @@ app.get('/api/manager/overview', auth, managerOnly, async (req, res) => {
     Attendance.find().populate('employee', 'name email title department role').sort({ clockIn: -1 }).limit(150).lean(),
     Attendance.find({ clockOut: null }).populate('employee', 'name email title department role').sort({ clockIn: -1 }).lean()
   ]);
-  res.json({ employees: employees.map((u) => ({ id: String(u._id), name: u.name, email: u.email, role: u.role, title: u.title, department: u.department })), records: records.map(publicAttendance), active: active.map(publicAttendance) });
+  res.json({ employees: employees.map((u) => ({ id: String(u._id), name: u.name, email: u.email, role: u.role, title: u.title, department: u.department })), records: records.map(publicAttendance), active: active.map((record) => publicAttendance(record, true)) });
 });
 app.get('/api/assistant/health', auth, async (_req, res) => {
   const base = process.env.RAG_API_URL;

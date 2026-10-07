@@ -1,0 +1,42 @@
+.tracking-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: -10px 0 18px;
+  padding: 12px 14px;
+  border: 1px solid #ead9bd;
+  border-radius: 8px;
+  background: #fff9ee;
+  color: #80633f;
+}
+
+.tracking-banner.tracking-on {
+  border-color: #dce9dd;
+  background: #f2f8f2;
+  color: #487253;
+}
+
+.tracking-banner > svg { flex: none; margin-top: 1px; }
+.tracking-banner > div { display: flex; flex-direction: column; gap: 3px; }
+.tracking-banner b { font-size: 10px; }
+.tracking-banner span { font-size: 9px; line-height: 1.5; }
+
+.live-location { min-width: 205px; }
+.live-location > span { font-size: 8px; }
+.location-trail-preview {
+  display: block;
+  width: 116px;
+  height: 34px;
+  overflow: visible;
+  border: 1px solid #e8eee8;
+  border-radius: 5px;
+  background: #f8faf7;
+}
+.location-trail-preview path { fill: none; stroke: #4f8a64; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.location-trail-preview circle { fill: #c45c45; stroke: white; stroke-width: 1.5; }
+.trail-caption { color: #909991; }
+
+@media(max-width:610px) {
+  .tracking-banner { margin-top: -8px; }
+  .live-location { margin-left: 43px; min-width: 0; width: calc(100% - 43px); }
+}

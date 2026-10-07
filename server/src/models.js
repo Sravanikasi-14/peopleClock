@@ -9,12 +9,21 @@ const userSchema = new mongoose.Schema({
   department: { type: String, default: 'General', maxlength: 80 }
 }, { timestamps: true });
 
+const locationPointSchema = new mongoose.Schema({
+  latitude: Number,
+  longitude: Number,
+  accuracy: Number,
+  recordedAt: Date
+}, { _id: false });
+
 const attendanceSchema = new mongoose.Schema({
   employee: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   clockIn: { type: Date, required: true },
   clockOut: { type: Date, default: null },
   clockInLocation: { latitude: Number, longitude: Number, accuracy: Number },
-  clockOutLocation: { latitude: Number, longitude: Number, accuracy: Number }
+  clockOutLocation: { latitude: Number, longitude: Number, accuracy: Number },
+  currentLocation: { latitude: Number, longitude: Number, accuracy: Number, updatedAt: Date },
+  locationTrail: { type: [locationPointSchema], default: [] }
 }, { timestamps: true });
 attendanceSchema.index({ employee: 1, clockIn: -1 });
 

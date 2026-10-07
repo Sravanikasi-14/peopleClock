@@ -1,6 +1,6 @@
 # PeopleClock
 
-A small, responsive HRMS assignment demo with separate employee and manager workspaces, real account registration, attendance records stored in MongoDB, location captured only at clock events, and a Python RAG policy assistant.
+A small, responsive HRMS assignment demo with separate employee and manager workspaces, real account registration, attendance records stored in MongoDB, browser-based live shift location sharing, and a Python RAG policy assistant.
 
 > **Full-stack app:** `client/` is the React UI, `server/` is the Express/Node API, MongoDB stores accounts and attendance, and `python-rag/` is the FastAPI policy service. In production, one Docker-based Render web service runs the Node app and Python service together. `PeopleClock-preview.html` is only an offline visual preview of the UI.
 
@@ -11,8 +11,8 @@ Opening `PeopleClock-preview.html` directly uses a `file://` origin. Browsers is
 - Employee and manager accounts have separate role-based interfaces after sign-in.
 - Forgot password opens a form for the registered email, new password, and confirmation. The API checks the match, hashes the password with bcrypt, and saves the hash to MongoDB. This demo flow does not verify email ownership; use mock accounts only.
 - Employees register with their name, email, title, department, and password; manager registration also requires a private registration code.
-- Employees clock in and out. The browser asks permission for coordinates at each event and stores those coordinates with its timestamp. If location permission or connectivity is unavailable, the time event can still be recorded without coordinates.
-- Managers see the registered employee directory, employees who are currently clocked in, event history, and links to the event coordinates on OpenStreetMap. OpenStreetMap is just the map view; no Google Maps API is used.
+- Employees clock in and out. While clocked in, the signed-in employee page uses the browser's visible geolocation permission to send current coordinates and a compact shift trail. The employee must keep the page open and connected; browser tracking pauses when the page closes or the device is offline. The employee sees a live-sharing indicator, and sharing stops at clock-out or sign-out.
+- Managers see active employees' latest shared coordinates, accuracy, update time, and a compact visual route trail. The dashboard refreshes every five seconds, and coordinates link to OpenStreetMap. No Google Maps API is used.
 - The employee attendance history is tied to the signed-in employee. Attendance and accounts are MongoDB records, not sample dashboard arrays.
 - The Python FastAPI service retrieves relevant passages from the mock company policy Markdown files using TF-IDF, then sends those passages and the question to Gemini for a concise grounded answer. The Gemini API key is held only by the Python service.
 
