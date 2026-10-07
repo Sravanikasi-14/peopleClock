@@ -45,7 +45,7 @@ function validLocation(location) {
   return { latitude, longitude, ...(Number.isFinite(accuracy) ? { accuracy } : {}) };
 }
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected' }));
+app.get('/api/health', (_req, res) => res.json({ ok: true, database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected', databaseName: mongoose.connection.name || null }));
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { name, email, password, role, title, department, managerCode } = req.body || {};
@@ -195,6 +195,6 @@ if (existsSync(clientBuild)) {
 app.use((err, _req, res, _next) => { console.error(err); res.status(500).json({ error: 'Something went wrong. Please try again.' }); });
 try {
   if (!process.env.MONGODB_URI || /[<>]/.test(process.env.MONGODB_URI)) throw new Error('MONGODB_URI is missing or still contains template placeholders. In .env, replace it with the connection string from MongoDB Atlas → Connect → Drivers (or your local MongoDB URI).');
-  await mongoose.connect(process.env.MONGODB_URI);
+  await mongoose.connect(process.env.MONGODB_URI, { dbName: process.env.MONGODB_DB_NAME || 'peopleclock' });
   app.listen(PORT, '0.0.0.0', () => console.log(`PeopleClock API listening on ${PORT}`));
 } catch (err) { console.error(`Startup failed: ${err.message}`); process.exit(1); }

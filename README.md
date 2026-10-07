@@ -22,7 +22,7 @@ Only company handbook content in `python-rag/company_docs/` is mock data. New em
 
 Requirements: Node.js 20+ and Python 3.10+. Create a free MongoDB Atlas cluster (or use a local MongoDB server), create a database user, and allow your development IP in Atlas network access. For the Render demo, Render's outbound IPs can change; Atlas may need a `0.0.0.0/0` network rule for the hosted API to reach it. Use that only for a fake-data demo with a strong database password, never for real HR data.
 
-1. Copy `.env.example` to `.env` and fill in `MONGODB_URI`, a long random `JWT_SECRET`, and a private `MANAGER_SIGNUP_CODE`. Copy `python-rag/.env.example` to `python-rag/.env` and set `GEMINI_API_KEY` from Google AI Studio. Keep both `.env` files private.
+1. Copy `.env.example` to `.env` and fill in `MONGODB_URI`, a long random `JWT_SECRET`, and a private `MANAGER_SIGNUP_CODE`. `MONGODB_DB_NAME` defaults to `peopleclock`, regardless of the database path in the URI. Copy `python-rag/.env.example` to `python-rag/.env` and set `GEMINI_API_KEY` from Google AI Studio. Keep both `.env` files private.
 2. Install Node dependencies:
 
    ```bash
@@ -54,6 +54,7 @@ Requirements: Node.js 20+ and Python 3.10+. Create a free MongoDB Atlas cluster 
 The included `render.yaml` creates **one** free Render web service. Its Docker image runs the React app, Node/Express API, and Python/FastAPI RAG service together, so the browser and APIs share one public URL. In Render, create or sync the Blueprint from this repository and set these environment variables on the `peopleclock` service:
 
 - `MONGODB_URI`: connection string for a free MongoDB Atlas cluster.
+- `MONGODB_DB_NAME`: database to use; the Blueprint sets it to `peopleclock`.
 - `MANAGER_SIGNUP_CODE`: a private code you choose and share only with the demo manager.
 - `GEMINI_API_KEY`: a key from Google AI Studio. Do not add it to the React client or commit it to GitHub.
 
