@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, ArrowDownLeft, ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronDown, CircleHelp, Clock3, Compass, DoorOpen, FileText, LayoutDashboard, LoaderCircle, LogOut, MapPin, Menu, MessageCircle, MoreHorizontal, Search, Shield, Sparkles, Users, X } from 'lucide-react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import './live-location.css';
 
 const API = import.meta.env.VITE_API_URL || '';
@@ -102,19 +104,41 @@ function Auth({ onSuccess }) {
 
 function Heading({ eyebrow, title, description, action }) { return <div className="page-heading"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1>{description&&<p>{description}</p>}</div>{action&&<div className="heading-action">{action}</div>}</div>; }
 function StatCard({ label, value, change, icon: Icon, accent = 'mint', foot }) { return <div className="stat-card"><div className="stat-top"><span>{label}</span><span className={`stat-icon ${accent}`}><Icon size={18}/></span></div><div className="stat-value">{value}</div><div className="stat-foot">{change&&<span className="stat-change"><ArrowUpRight size={13}/>{change}</span>}{foot&&<span>{foot}</span>}</div></div>; }
-function MapLink({ location }) { if (!Number.isFinite(location?.latitude) || !Number.isFinite(location?.longitude)) return <span className="location-missing"><MapPin size={14}/>Not shared</span>; const href = `https://www.openstreetmap.org/?mlat=${location.latitude}&mlon=${location.longitude}#map=18/${location.latitude}/${location.longitude}`; return <a className="location-link" href={href} target="_blank" rel="noreferrer" title={`Accuracy about ${Math.round(location.accuracy || 0)} m`}><MapPin size={14}/>{location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}<ArrowUpRight size={12}/></a>; }
-function LocationTrailPreview({ points = [] }) {
-  const pathPoints = points.slice(-80);
-  if (pathPoints.length < 2) return <span className="trail-caption">Collecting route points…</span>;
-  const latitudes = pathPoints.map((point) => point.latitude);
-  const longitudes = pathPoints.map((point) => point.longitude);
-  const minLat = Math.min(...latitudes), maxLat = Math.max(...latitudes);
-  const minLon = Math.min(...longitudes), maxLon = Math.max(...longitudes);
-  const latRange = maxLat - minLat || 0.0001, lonRange = maxLon - minLon || 0.0001;
-  const coords = pathPoints.map((point) => [5 + ((point.longitude - minLon) / lonRange) * 90, 31 - ((point.latitude - minLat) / latRange) * 26]);
-  const line = coords.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ');
-  const [x, y] = coords.at(-1);
-  return <svg className="location-trail-preview" viewBox="0 0 100 36" role="img" aria-label={`${points.length} location points recorded during this shift`}><path d={line}/><circle cx={x} cy={y} r="3"/></svg>;
+function MapLink({ location }) { if (!Number.isFinite(location?.latitude) || !Number.isFinite(location?.longitude)) return <span className="location-missing"><MapPin size={14}/>Location unavailable</span>; const href = `https://www.openstreetmap.org/?mlat=${location.latitude}&mlon=${location.longitude}#map=18/${location.latitude}/${location.longitude}`; return <a className="location-link" href={href} target="_blank" rel="noreferrer"><MapPin size={14}/>View map<ArrowUpRight size={12}/></a>; }
+function LiveLocationMap({ location, trail = [], updatedAt }) {
+  const mapElement = useRef(null), mapRef = useRef(null), markerRef = useRef(null), routeRef = useRef(null), trailKeyRef = useRef('');
+  const hasLocation = Number.isFinite(location?.latitude) && Number.isFinite(location?.longitude);
+  const trailKey = trail.map((point) => `${point.latitude},${point.longitude}`).join(';');
+  useEffect(() => {
+    if (!hasLocation || !mapElement.current || mapRef.current) return;
+    const center = [location.latitude, location.longitude];
+    const map = L.map(mapElement.current, { scrollWheelZoom: false }).setView(center, 16);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a> · <a href="https://www.openstreetmap.org/fixthemap">Report a map issue</a>'
+    }).addTo(map);
+    mapRef.current = map;
+    markerRef.current = L.circleMarker(center, { radius: 9, color: '#fff', weight: 3, fillColor: '#d7654c', fillOpacity: 1 }).addTo(map);
+    routeRef.current = L.polyline(trail.map((point) => [point.latitude, point.longitude]), { color: '#397b58', weight: 4, opacity: 0.85 }).addTo(map);
+    trailKeyRef.current = trailKey;
+    if (trail.length > 1) map.fitBounds(routeRef.current.getBounds().pad(0.15), { maxZoom: 16 });
+    requestAnimationFrame(() => map.invalidateSize());
+    return () => { map.remove(); mapRef.current = null; markerRef.current = null; routeRef.current = null; };
+  }, [hasLocation]);
+  useEffect(() => {
+    if (!hasLocation || !mapRef.current) return;
+    const point = [location.latitude, location.longitude];
+    markerRef.current?.setLatLng(point);
+    routeRef.current?.setLatLngs(trail.map((item) => [item.latitude, item.longitude]));
+    if (trailKey !== trailKeyRef.current && trail.length > 1) {
+      mapRef.current.fitBounds(routeRef.current.getBounds().pad(0.15), { maxZoom: 16, animate: true });
+      trailKeyRef.current = trailKey;
+    } else {
+      mapRef.current.panTo(point, { animate: true, duration: 0.4 });
+    }
+  }, [hasLocation, location?.latitude, location?.longitude, trailKey]);
+  if (!hasLocation) return <div className="live-map-empty"><MapPin size={20}/><span>Waiting for employee location…</span></div>;
+  return <div className="live-map-wrap"><div className="live-map-canvas" ref={mapElement}/><div className="live-map-caption"><span><i/>Live location{updatedAt?` · updated ${timeSeconds(updatedAt)}`:''}</span><b>{trail.length} trail points</b></div></div>;
 }
 function requestClockLocation() {
   if (!navigator.geolocation) return Promise.resolve({ location: null, message: 'this browser does not support location. Try the latest version of Chrome' });
@@ -160,7 +184,7 @@ function EmployeePage({ page, session, notify }) {
         const haversine=Math.sin(dLat/2)**2+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
         movedMeters=6371000*2*Math.atan2(Math.sqrt(haversine),Math.sqrt(1-haversine));
       }
-      if(sending||(lastSentLocation&&movedMeters<10&&now-lastSentAt<20000))return;
+      if(sending||(lastSentLocation&&now-lastSentAt<10000)||(lastSentLocation&&movedMeters<10&&now-lastSentAt<20000))return;
       sending=true;lastSentAt=now;lastSentLocation=location;
       try{await api('/attendance/location',{token:session.token,method:'PUT',body:JSON.stringify({location})});if(active)setTrackingStatus('active');}
       catch{if(active){setTrackingStatus('Updates paused. Check your internet connection.');lastSentAt=0;}}
@@ -196,7 +220,7 @@ function ManagerPage({ page, session, notify }) {
  return <><Heading eyebrow="PEOPLE OPERATIONS" title={`Hello, ${session.user.name.split(' ')[0]}.`} description={dateLong(new Date())} action={<span className="member-count live"><i/>{data.active.length} working now</span>}/><div className="manager-banner"><div className="banner-copy"><div className="hero-kicker"><span className="live-dot"/>LIVE TEAM OVERVIEW</div><h2>Your people, at a glance.</h2><p>Live location updates while employees are clocked in and sharing location.</p><div className="hero-meta"><span><MapPin size={14}/>Live shift tracking</span><span><Activity size={14}/>Dashboard refreshes every 5 seconds</span></div></div><div className="banner-graphic"><div className="graphic-ring ring-a"/><div className="graphic-ring ring-b"/><div className="graphic-center"><Users size={24}/></div><div className="graphic-count">{data.employees.length}<small>TEAM</small></div></div></div>
  <div className="stats-grid"><StatCard label="Team members" value={data.employees.length} foot="registered employees" icon={Users} accent="lavender"/><StatCard label="Working now" value={data.active.length} foot="currently clocked in" icon={Activity} accent="mint"/><StatCard label="Clock events" value={data.records.length} foot="latest 150 events" icon={Clock3} accent="peach"/></div>
  <div className="section-heading"><div><h2>Who's working</h2><p>Employees currently clocked in</p></div><button className="text-button" onClick={()=>window.dispatchEvent(new CustomEvent('navigate-team'))}>Team directory <ArrowRight size={15}/></button></div>
- <div className="content-card team-presence"><div className="presence-head"><div><h3>Live attendance</h3><p>Latest location and shift trail, while the employee’s app is open and online.</p></div><span className="live-label"><i/>LIVE</span></div>{data.active.length?data.active.map((r,i)=>{const liveLocation=Number.isFinite(r.currentLocation?.latitude)?r.currentLocation:r.clockInLocation;return <div className="presence-row" key={r.id}><Avatar name={r.employee?.name||'Employee'} tone={colors[i%colors.length]}/><div className="presence-person"><b>{r.employee?.name||'Employee'}</b><span>{r.employee?.title||r.employee?.department||'Team member'} <span className="middot">·</span> In since {time(r.clockIn)}</span></div><div className="presence-location live-location"><MapLink location={liveLocation}/><span>{r.currentLocation?.updatedAt?`Updated ${timeSeconds(r.currentLocation.updatedAt)}`:'Waiting for live GPS update'}</span><LocationTrailPreview points={r.locationTrail||[]}/><span>{r.trailPointCount||0} trail points · ±{Math.round(liveLocation?.accuracy||0)} m accuracy</span></div><div className="presence-elapsed">{duration(r.clockIn,new Date())}</div></div>}) : <div className="empty-state"><span className="empty-icon"><Clock3 size={21}/></span><b>No one's clocked in yet</b><p>When an employee clocks in, their live location and shift trail will appear here.</p></div>}</div>
+ <div className="content-card team-presence"><div className="presence-head"><div><h3>Live attendance</h3><p>Live map and shift route while the employee’s app is open and online.</p></div><span className="live-label"><i/>LIVE</span></div>{data.active.length?data.active.map((r,i)=>{const liveLocation=Number.isFinite(r.currentLocation?.latitude)?r.currentLocation:r.clockInLocation;return <div className="presence-row live-presence-row" key={r.id}><Avatar name={r.employee?.name||'Employee'} tone={colors[i%colors.length]}/><div className="presence-person"><b>{r.employee?.name||'Employee'}</b><span>{r.employee?.title||r.employee?.department||'Team member'} <span className="middot">·</span> In since {time(r.clockIn)}</span></div><div className="presence-location live-location"><LiveLocationMap location={liveLocation} trail={r.locationTrail||[]} updatedAt={r.currentLocation?.updatedAt}/></div><div className="presence-elapsed">{duration(r.clockIn,new Date())}</div></div>}) : <div className="empty-state"><span className="empty-icon"><Clock3 size={21}/></span><b>No one's clocked in yet</b><p>When an employee clocks in, their live location and shift trail will appear here.</p></div>}</div>
  <div className="section-heading compact"><div><h2>Recent clock events</h2><p>Latest attendance activity across the team</p></div><button className="refresh-button" onClick={load}><Activity size={15}/>Refresh</button></div>
  <div className="content-card"><div className="table-wrap"><table><thead><tr><th>EMPLOYEE</th><th>DATE</th><th>CLOCK IN</th><th>LOCATION AT IN</th><th>CLOCK OUT</th><th>LOCATION AT OUT</th><th>HOURS</th></tr></thead><tbody>{data.records.slice(0,8).map((r,i)=>{const e=r.employee||employeeById.get(r.employee);return <tr key={r.id}><td><div className="person-cell"><Avatar name={e?.name||'Employee'} tone={colors[i%colors.length]} size="small"/><div><b>{e?.name||'Employee'}</b><small>{e?.department||'General'}</small></div></div></td><td>{dateShort(r.clockIn)}</td><td>{time(r.clockIn)}</td><td><MapLink location={r.clockInLocation}/></td><td>{time(r.clockOut)}</td><td><MapLink location={r.clockOutLocation}/></td><td>{duration(r.clockIn,r.clockOut)}</td></tr>})}{data.records.length===0&&!loading&&<tr><td colSpan="7" className="empty-cell">No clock events yet. Attendance records will show here as employees use the app.</td></tr>}</tbody></table>{loading&&<div className="loading-row"><LoaderCircle className="spin" size={18}/>Loading attendance…</div>}</div></div>
  <div className="manager-footer"><Shield size={14}/>Live sharing runs only while the employee is clocked in, signed in, and has the app open with location permission. Dashboard refreshes every 5 seconds.</div><NavigationEvents/></>;

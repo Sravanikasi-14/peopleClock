@@ -23,7 +23,12 @@ function auth(req, res, next) {
   catch { res.status(401).json({ error: 'Please sign in to continue.' }); }
 }
 const managerOnly = (req, res, next) => req.user.role === 'manager' ? next() : res.status(403).json({ error: 'Manager access required.' });
-const publicAttendance = (a, includeLiveLocation = false) => ({ id: String(a._id), employee: a.employee?._id ? safeUser(a.employee) : a.employee, clockIn: a.clockIn, clockOut: a.clockOut, clockInLocation: a.clockInLocation, clockOutLocation: a.clockOutLocation, ...(includeLiveLocation ? { currentLocation: a.currentLocation, locationTrail: (a.locationTrail || []).slice(-80), trailPointCount: (a.locationTrail || []).length } : {}) });
+function compactTrail(points = [], limit = 400) {
+  if (points.length <= limit) return points;
+  const step = (points.length - 1) / (limit - 1);
+  return Array.from({ length: limit }, (_, index) => points[Math.round(index * step)]);
+}
+const publicAttendance = (a, includeLiveLocation = false) => ({ id: String(a._id), employee: a.employee?._id ? safeUser(a.employee) : a.employee, clockIn: a.clockIn, clockOut: a.clockOut, clockInLocation: a.clockInLocation, clockOutLocation: a.clockOutLocation, ...(includeLiveLocation ? { currentLocation: a.currentLocation, locationTrail: compactTrail(a.locationTrail || []), trailPointCount: (a.locationTrail || []).length } : {}) });
 function validLocation(location) {
   if (location == null) return null;
   const { latitude, longitude, accuracy } = location;
