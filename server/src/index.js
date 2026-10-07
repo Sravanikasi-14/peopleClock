@@ -17,6 +17,7 @@ const PORT = Number(process.env.PORT || 4000);
 const JWT_SECRET = process.env.JWT_SECRET || 'local-development-secret-change-me';
 
 const safeUser = (u) => ({ id: String(u._id), name: u.name, email: u.email, role: u.role, title: u.title, department: u.department });
+const normalizeDepartment = (value) => String(value || 'General').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-US');
 function auth(req, res, next) {
   const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
   try { if (!token) throw new Error(); req.user = jwt.verify(token, JWT_SECRET); next(); }
@@ -40,13 +41,22 @@ app.get('/api/health', (_req, res) => res.json({ ok: true, database: mongoose.co
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { name, email, password, role, title, department, managerCode } = req.body || {};
-    if (!name?.trim() || !email?.trim() || !password || password.length < 8) return res.status(400).json({ error: 'Name, email, and a password of at least 8 characters are required.' });
+    if (!name?.trim() || !email?.trim() || !password || password.length < 8 || !department?.trim()) return res.status(400).json({ error: 'Name, work email, department, and a password of at least 8 characters are required.' });
     if (!['employee', 'manager'].includes(role)) return res.status(400).json({ error: 'Choose employee or manager.' });
+    if (department.trim().length > 80) return res.status(400).json({ error: 'Department must be 80 characters or fewer.' });
     if (role === 'manager' && (!process.env.MANAGER_SIGNUP_CODE || managerCode !== process.env.MANAGER_SIGNUP_CODE)) return res.status(403).json({ error: 'A valid manager registration code is required.' });
-    const user = await User.create({ name: name.trim(), email: email.trim().toLowerCase(), passwordHash: await bcrypt.hash(password, 12), role, title: title?.trim() || (role === 'manager' ? 'People manager' : 'Team member'), department: department?.trim() || 'General' });
+    const cleanDepartment = department.trim().replace(/\s+/g, ' ');
+    const departmentKey = normalizeDepartment(cleanDepartment);
+    if (role === 'manager') {
+      const managers = await User.find({ role: 'manager' }).select('department departmentKey').lean();
+      if (managers.some((manager) => normalizeDepartment(manager.departmentKey || manager.department) === departmentKey)) {
+        return res.status(409).json({ error: `A manager is already registered for ${cleanDepartment}. Contact your workspace administrator if this department manager needs to change.` });
+      }
+    }
+    const user = await User.create({ name: name.trim(), email: email.trim().toLowerCase(), passwordHash: await bcrypt.hash(password, 12), role, title: title?.trim() || (role === 'manager' ? 'People manager' : 'Team member'), department: cleanDepartment, departmentKey });
     const token = jwt.sign({ sub: String(user._id), role: user.role, name: user.name }, JWT_SECRET, { expiresIn: '7d' });
     res.status(201).json({ token, user: safeUser(user) });
-  } catch (err) { res.status(err.code === 11000 ? 409 : 400).json({ error: err.code === 11000 ? 'An account with that email already exists.' : err.message }); }
+  } catch (err) { res.status(err.code === 11000 ? 409 : 400).json({ error: err.code === 11000 ? (err.keyPattern?.departmentKey ? 'A manager is already registered for that department.' : 'An account with that email already exists.') : err.message }); }
 });
 app.post('/api/auth/login', async (req, res) => {
   const user = await User.findOne({ email: String(req.body?.email || '').trim().toLowerCase() });
@@ -130,12 +140,19 @@ app.put('/api/attendance/location', auth, async (req, res) => {
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 app.get('/api/manager/overview', auth, managerOnly, async (req, res) => {
-  const [employees, records, active] = await Promise.all([
-    User.find({ role: 'employee' }).select('-passwordHash').sort({ name: 1 }).lean(),
-    Attendance.find().populate('employee', 'name email title department role').sort({ clockIn: -1 }).limit(150).lean(),
-    Attendance.find({ clockOut: null }).populate('employee', 'name email title department role').sort({ clockIn: -1 }).lean()
-  ]);
-  res.json({ employees: employees.map((u) => ({ id: String(u._id), name: u.name, email: u.email, role: u.role, title: u.title, department: u.department })), records: records.map(publicAttendance), active: active.map((record) => publicAttendance(record, true)) });
+  const manager = await User.findById(req.user.sub).select('department departmentKey role').lean();
+  if (!manager || manager.role !== 'manager') return res.status(404).json({ error: 'Manager account not found.' });
+  const managerDepartment = normalizeDepartment(manager.departmentKey || manager.department);
+  // Filter on the server before loading attendance, including older accounts without departmentKey.
+  const allEmployees = await User.find({ role: 'employee' }).select('name email title department departmentKey').lean();
+  const employees = allEmployees.filter((employee) => normalizeDepartment(employee.departmentKey || employee.department) === managerDepartment).sort((a, b) => a.name.localeCompare(b.name));
+  const employeeIds = employees.map((employee) => employee._id);
+  const attendanceScope = { employee: { $in: employeeIds } };
+  const [records, active] = employeeIds.length ? await Promise.all([
+    Attendance.find(attendanceScope).populate('employee', 'name email title department role').sort({ clockIn: -1 }).limit(150).lean(),
+    Attendance.find({ ...attendanceScope, clockOut: null }).populate('employee', 'name email title department role').sort({ clockIn: -1 }).lean()
+  ]) : [[], []];
+  res.json({ department: manager.department || 'General', employees: employees.map((u) => ({ id: String(u._id), name: u.name, email: u.email, role: 'employee', title: u.title, department: u.department || 'General' })), records: records.map(publicAttendance), active: active.map((record) => publicAttendance(record, true)) });
 });
 app.get('/api/assistant/health', auth, async (_req, res) => {
   const base = process.env.RAG_API_URL;

@@ -6,8 +6,14 @@ const userSchema = new mongoose.Schema({
   passwordHash: { type: String, required: true },
   role: { type: String, enum: ['employee', 'manager'], required: true },
   title: { type: String, default: 'Team member', maxlength: 80 },
-  department: { type: String, default: 'General', maxlength: 80 }
+  department: { type: String, default: 'General', maxlength: 80 },
+  departmentKey: { type: String, lowercase: true, trim: true }
 }, { timestamps: true });
+userSchema.index({ departmentKey: 1 }, {
+  unique: true,
+  partialFilterExpression: { role: 'manager', departmentKey: { $type: 'string' } },
+  name: 'one_manager_per_department'
+});
 
 const locationPointSchema = new mongoose.Schema({
   latitude: Number,
